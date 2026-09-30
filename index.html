@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MultiSig Wallet</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c0f; --surface: #111418; --surface2: #181c22;
+    --border: #2a2f38; --accent: #00ff87; --accent2: #00c8ff;
+    --warn: #ffb800; --danger: #ff4545; --text: #e8eaf0; --muted: #6b7280;
+    --mono: 'Space Mono', monospace; --sans: 'Syne', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(var(--border) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px; opacity: 0.18; pointer-events: none; z-index: 0;
+  }
+  .app { position: relative; z-index: 1; max-width: 1020px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 12px; padding: 16px 22px;
+    border: 1px solid var(--border); background: var(--surface); margin-bottom: 18px;
+  }
+  .logo { font-family: var(--sans); font-size: 20px; font-weight: 800; }
+  .logo span { color: var(--accent); }
+  .hinfo { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Panels ── */
+  .panel { border: 1px solid var(--border); background: var(--surface); padding: 20px 22px; margin-bottom: 16px; }
+  .lbl {
+    font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .lbl::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── Fields ── */
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media(max-width:580px){ .field-row{ grid-template-columns:1fr; } }
+  label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+  input, select {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--mono); font-size: 12px; padding: 9px 12px; outline: none; width: 100%;
+    transition: border-color .2s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface); }
+
+  /* ── Buttons ── */
+  .btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    padding: 10px 18px; border: 1px solid currentColor; cursor: pointer;
+    transition: all .15s; background: transparent;
+  }
+  .btn:disabled { opacity:.3; cursor:not-allowed; }
+  .btn-green { color: var(--accent); }
+  .btn-green:not(:disabled):hover { background: var(--accent); color: #000; }
+  .btn-blue { color: var(--accent2); }
+  .btn-blue:not(:disabled):hover { background: var(--accent2); color: #000; }
+  .btn-yellow { color: var(--warn); }
+  .btn-yellow:not(:disabled):hover { background: var(--warn); color: #000; }
+  .btn-red { color: var(--danger); }
+  .btn-red:not(:disabled):hover { background: var(--danger); color: #fff; }
+  .btn-full { width: 100%; margin-top: 6px; }
+  .btn-sm { padding: 5px 10px; font-size: 10px; }
+
+  /* ── Stats ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat { border: 1px solid var(--border); background: var(--surface); padding: 14px 16px; }
+  .stat-lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .stat-val { font-family: var(--sans); font-size: 22px; font-weight: 800; color: var(--accent); }
+  .stat-sub { font-size: 10px; color: var(--muted); }
+
+  /* ── Two col ── */
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  @media(max-width:700px){ .two{ grid-template-columns:1fr; } }
+
+  /* ── Owners ── */
+  .owner-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 11px; gap: 8px;
+  }
+  .owner-row:last-child { border-bottom: none; }
+  .owner-addr { color: var(--accent2); word-break: break-all; flex: 1; }
+  .tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 7px; border: 1px solid; flex-shrink:0; }
+  .tag-you { color: var(--accent); border-color: var(--accent); }
+  .tag-own { color: var(--muted); border-color: var(--muted); }
+
+  /* ── TX Cards ── */
+  .tx-list { display: flex; flex-direction: column; gap: 8px; }
+  .tx-card { border: 1px solid var(--border); background: var(--surface2); padding: 13px 15px; }
+  .tx-card.done { opacity:.45; border-style:dashed; }
+  .tx-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; flex-wrap: wrap; gap: 5px; }
+  .tx-id { font-family: var(--sans); font-size: 16px; font-weight: 800; color: var(--accent); }
+  .tx-badge { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 2px 8px; border: 1px solid; }
+  .tx-badge.pending { color: var(--warn); border-color: var(--warn); }
+  .tx-badge.ready   { color: var(--accent); border-color: var(--accent); }
+  .tx-badge.done    { color: var(--muted); border-color: var(--muted); }
+  .tx-info { font-size: 11px; color: var(--muted); line-height: 1.8; margin-bottom: 9px; }
+  .tx-info strong { color: var(--text); }
+  .bar { height: 3px; background: var(--border); margin-bottom: 9px; }
+  .bar-fill { height: 100%; background: var(--accent); transition: width .4s; }
+  .tx-acts { display: flex; gap: 7px; flex-wrap: wrap; }
+
+  /* ── Log ── */
+  .log-body { font-size: 11px; max-height: 150px; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .log-row { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--surface2); line-height: 1.5; }
+  .log-t { color: var(--muted); flex-shrink: 0; }
+  .ok  { color: var(--accent); }
+  .err { color: var(--danger); }
+  .inf { color: var(--accent2); }
+  .empty { color: var(--muted); font-size: 11px; text-align: center; padding: 18px 0; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 18px; right: 18px;
+    background: var(--surface); border: 1px solid var(--accent);
+    color: var(--accent); font-size: 11px; padding: 10px 16px;
+    max-width: 300px; z-index: 999; opacity: 0; transform: translateY(8px);
+    transition: all .3s; pointer-events: none;
+  }
+  #toast.show { opacity:1; transform:translateY(0); }
+  #toast.err  { border-color: var(--danger); color: var(--danger); }
+
+  /* ── Config notice ── */
+  .config-notice {
+    background: #1a1200; border: 1px solid var(--warn); color: var(--warn);
+    font-size: 11px; padding: 12px 16px; margin-bottom: 16px; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ════════════════════════════════════════════════
+     ⚙️  CONFIG — PASTE YOUR VALUES HERE AFTER DEPLOY
+     ════════════════════════════════════════════════ -->
+<script>
+  const CONFIG = {
+    // Paste the contract address printed by "npm run deploy"
+    contractAddress: "0xF33bEc407eCa2B6059EacA7Bd3A65F2D69FF6Fbd",
+
+    // Paste the 3 owner addresses printed by "npm run deploy"
+    // Format: { "Label shown in dropdown": "0xAddress" }
+    owners: {
+      "Owner 0 (Account 0)": "0x29559285d5209ACC7787D1eFe1Cf9831df23106a",
+      "Owner 1 (Account 1)": "0xDD725ce24B9A48144995010457e091E32F5A76FB",
+      "Owner 2 (Account 2)": "0xbB85A1b81B5eDb907f1B7364314f8BcacC780319",
+    },
+
+    // Private keys for each owner — from Ganache's key icon
+    // ⚠️  Only do this on a local test network, NEVER on mainnet
+    privateKeys: {
+      "Owner 0 (Account 0)": "0x6648784534642cd7085494775c754b729198953e67106377d0725a65021f2786",
+      "Owner 1 (Account 1)": "0x60f60cf92408564841c2f90a050d00d0dcb04f97ebfbba2cdcba3478bd01769d",
+      "Owner 2 (Account 2)": "0xc236a9766c3e80930dfb45056fee46641c918434ddd8fa7bfb9d10b0de77c672",
+    },
+
+    // Ganache RPC — leave as-is unless you changed Ganache's port
+    rpcUrl: "http://127.0.0.1:7545",
+  };
+</script>
+
+<!-- ════════════════ HEADER ════════════════ -->
+<header>
+  <div class="logo">Multi<span>Sig</span> Wallet</div>
+  <div class="hinfo">
+    <span class="dot" id="dot"></span>
+    <span id="net-name">Not connected</span>
+    <span id="cur-account" style="color:var(--accent2);font-size:11px;"></span>
+  </div>
+</header>
+
+<!-- Config warning — shown until user fills in addresses -->
+<div class="config-notice" id="config-warn">
+  ⚠️  Open index.html in a text editor and fill in the CONFIG section at the top
+  with your contract address, owner addresses and private keys printed by "npm run deploy".
+</div>
+
+<!-- ════════════════ ACCOUNT SELECTOR ════════════════ -->
+<div class="panel" id="account-panel" style="display:none">
+  <div class="lbl">Acting as (switch owner)</div>
+  <div class="field">
+    <label>Select which owner you are right now</label>
+    <select id="owner-select" onchange="switchOwner(this.value)"></select>
+  </div>
+  <p style="font-size:10px;color:var(--muted);margin-top:8px;">
+    Each owner is a separate Ganache account. Switch to simulate different owners approving.
+  </p>
+</div>
+
+<!-- ════════════════ STATS ════════════════ -->
+<div class="stats" id="stats" style="display:none">
+  <div class="stat"><div class="stat-lbl">Balance</div><div class="stat-val" id="s-bal">—</div><div class="stat-sub">ETH</div></div>
+  <div class="stat"><div class="stat-lbl">Owners</div><div class="stat-val" id="s-own">—</div><div class="stat-sub">total</div></div>
+  <div class="stat"><div class="stat-lbl">Required</div><div class="stat-val" id="s-req">—</div><div class="stat-sub">approvals</div></div>
+  <div class="stat"><div class="stat-lbl">Transactions</div><div class="stat-val" id="s-txc">—</div><div class="stat-sub">submitted</div></div>
+</div>
+
+<!-- ════════════════ TWO COLUMNS ════════════════ -->
+<div class="two" id="main" style="display:none">
+
+  <!-- Left: Owners list + Deposit -->
+  <div>
+    <div class="panel">
+      <div class="lbl">Owners</div>
+      <div id="owners-list"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="panel" style="margin-top:0">
+      <div class="lbl">Deposit ETH into Wallet</div>
+      <div class="field">
+        <label>Amount (ETH)</label>
+        <input id="dep-amt" type="number" step="0.01" placeholder="0.5"/>
+      </div>
+      <button class="btn btn-blue btn-full" id="btn-deposit">Send ETH to Wallet</button>
+    </div>
+  </div>
+
+  <!-- Right: Submit TX -->
+  <div class="panel">
+    <div class="lbl">Submit New Transaction</div>
+    <div class="field">
+      <label>Recipient address</label>
+      <input id="tx-to" placeholder="0x..."/>
+    </div>
+    <div class="field">
+      <label>Amount (ETH)</label>
+      <input id="tx-val" type="number" step="0.001" placeholder="0.1"/>
+    </div>
+    <div class="field">
+      <label>Data — leave blank for normal ETH transfer</label>
+      <input id="tx-data" placeholder="0x"/>
+    </div>
+    <button class="btn btn-green btn-full" id="btn-submit">Submit Transaction</button>
+  </div>
+</div>
+
+<!-- ════════════════ TRANSACTIONS ════════════════ -->
+<div class="panel" id="tx-panel" style="display:none">
+  <div class="lbl" style="justify-content:space-between">
+    <span>Transaction History</span>
+    <button class="btn btn-sm btn-green" onclick="refresh()">↻ Refresh</button>
+  </div>
+  <div class="tx-list" id="tx-list"><div class="empty">No transactions yet.</div></div>
+</div>
+
+<!-- ════════════════ LOG ════════════════ -->
+<div class="panel">
+  <div class="lbl">Activity Log</div>
+  <div class="log-body" id="log"></div>
+</div>
+
+</div><!-- /app -->
+<div id="toast"></div>
+
+<!-- ════════════════════════════════════════════
+     CONTRACT ABI
+     Only the functions that exist in the contract
+     ════════════════════════════════════════════ -->
+<script>
+const ABI = [
+  "function owners(uint) view returns (address)",
+  "function isOwner(address) view returns (bool)",
+  "function required() view returns (uint)",
+  "function transactions(uint) view returns (address to, uint value, bytes data, bool executed)",
+  "function approved(uint, address) view returns (bool)",
+  "function submit(address _to, uint _value, bytes calldata _data) external",
+  "function approve(uint _txId) external",
+  "function revoke(uint _txId) external",
+  "function execute(uint _txId) external",
+  "event Deposit(address indexed sender, uint amount)",
+  "event Submit(uint indexed txId)",
+  "event Approve(address indexed owner, uint indexed txId)",
+  "event Revoke(address indexed owner, uint indexed txId)",
+  "event Execute(uint indexed txId)",
+];
+
+// ── State ──────────────────────────────────────────
+let provider, contract, currentWallet;
+let owners = [], required = 0, txCount = 0;
+
+// ── Helpers ────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function addLog(msg, cls = 'inf') {
+  const t = new Date().toLocaleTimeString();
+  const row = document.createElement('div');
+  row.className = 'log-row';
+  row.innerHTML = `<span class="log-t">${t}</span><span class="${cls}">${msg}</span>`;
+  const box = $('log');
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+function toast(msg, isErr = false) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isErr ? ' err' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 3000);
+}
+function short(addr) { return addr.slice(0,6)+'…'+addr.slice(-4); }
+
+// ── Check CONFIG is filled ─────────────────────────
+function configReady() {
+  return CONFIG.contractAddress !== "0xPASTE_CONTRACT_ADDRESS_HERE" &&
+         !Object.values(CONFIG.privateKeys).some(k => k.includes("PASTE"));
+}
+
+// ── Legacy tx options for Ganache 2.7 ─────────────
+// Ganache 2.7 does not support EIP-1559 (type-2) transactions.
+// Force type-0 legacy + fixed gasPrice + explicit gasLimit.
+const TX_OPTS = {
+  gasPrice: ethers.utils.parseUnits('20', 'gwei'),
+  gasLimit: 300000,
+  type: 0,
+};
+
+// ── Init ───────────────────────────────────────────
+async function init() {
+  if (!configReady()) {
+    addLog("Fill in the CONFIG section in index.html first.", 'err');
+    return;
+  }
+  $('config-warn').style.display = 'none';
+
+  // Connect to Ganache directly — specify network to avoid EIP-1559 detection
+  provider = new ethers.providers.JsonRpcProvider(
+    CONFIG.rpcUrl,
+    { chainId: 1337, name: 'ganache' }
+  );
+
+  // Build the owner selector dropdown
+  const sel = $('owner-select');
+  sel.innerHTML = '';
+  for (const label of Object.keys(CONFIG.owners)) {
+    const opt = document.createElement('option');
+    opt.value = label;
+    opt.textContent = label + ' — ' + CONFIG.owners[label].slice(0,10)+'…';
+    sel.appendChild(opt);
+  }
+
+  // Start as Owner 0
+  await switchOwner(Object.keys(CONFIG.owners)[0]);
+
+  $('account-panel').style.display = 'block';
+  $('stats').style.display = 'grid';
+  $('main').style.display = 'grid';
+  $('tx-panel').style.display = 'block';
+
+  $('dot').className = 'dot on';
+  $('net-name').textContent = 'Ganache (localhost:7545)';
+
+  listenEvents();
+  addLog('Connected to Ganache', 'ok');
+}
+
+// ── Switch active owner ────────────────────────────
+async function switchOwner(label) {
+  const address = CONFIG.owners[label];
+  const privateKey = CONFIG.privateKeys[label];
+
+  // Create a "wallet" (signer) from the private key
+  currentWallet = new ethers.Wallet(privateKey, provider);
+
+  // Attach the contract to this signer
+  contract = new ethers.Contract(CONFIG.contractAddress, ABI, currentWallet);
+
+  $('cur-account').textContent = 'Acting as: ' + label;
+  addLog('Switched to ' + label + ' (' + address + ')', 'inf');
+
+  await refresh();
+}
+window.switchOwner = switchOwner;
+
+// ── Refresh all data ───────────────────────────────
+async function refresh() {
+  if (!contract) return;
+  try {
+    required = (await contract.required()).toNumber();
+
+    // Read owners array from contract
+    owners = [];
+    for (let i = 0; ; i++) {
+      try { owners.push(await contract.owners(i)); }
+      catch { break; }
+    }
+
+    // Read balance from provider
+    const bal = await provider.getBalance(CONFIG.contractAddress);
+
+    // Count transactions
+    txCount = 0;
+    for (let i = 0; ; i++) {
+      try { await contract.transactions(i); txCount = i + 1; }
+      catch { break; }
+    }
+
+    $('s-bal').textContent = parseFloat(ethers.utils.formatEther(bal)).toFixed(4);
+    $('s-own').textContent = owners.length;
+    $('s-req').textContent = required;
+    $('s-txc').textContent = txCount;
+
+    renderOwners();
+    await renderTxs();
+  } catch(e) {
+    addLog('Refresh error: ' + e.message, 'err');
+  }
+}
+window.refresh = refresh;
+
+// ── Render owner list ──────────────────────────────
+function renderOwners() {
+  const box = $('owners-list');
+  const current = currentWallet.address.toLowerCase();
+  box.innerHTML = owners.map(addr => {
+    const you = addr.toLowerCase() === current;
+    return `<div class="owner-row">
+      <span class="owner-addr">${addr}</span>
+      <span class="tag ${you ? 'tag-you' : 'tag-own'}">${you ? 'YOU' : 'Owner'}</span>
+    </div>`;
+  }).join('') || '<div class="empty">No owners found.</div>';
+}
+
+// ── Render transactions ────────────────────────────
+async function renderTxs() {
+  const box = $('tx-list');
+  if (txCount === 0) { box.innerHTML = '<div class="empty">No transactions yet.</div>'; return; }
+
+  const current = currentWallet.address.toLowerCase();
+  const isOwnerUser = owners.some(o => o.toLowerCase() === current);
+  const cards = [];
+
+  for (let i = txCount - 1; i >= 0; i--) {
+    const [to, value, , executed] = await contract.transactions(i);
+    let approvals = 0;
+    for (const o of owners) {
+      if (await contract.approved(i, o)) approvals++;
+    }
+    const hasApproved = await contract.approved(i, currentWallet.address);
+    const ethVal = parseFloat(ethers.utils.formatEther(value)).toFixed(4);
+    const isReady = !executed && approvals >= required;
+    const pct = Math.min(100, Math.round(approvals / required * 100));
+
+    let badgeCls, badgeTxt;
+    if (executed)     { badgeCls = 'done';    badgeTxt = 'Executed'; }
+    else if (isReady) { badgeCls = 'ready';   badgeTxt = 'Ready!'; }
+    else              { badgeCls = 'pending'; badgeTxt = 'Pending'; }
+
+    cards.push(`
+      <div class="tx-card ${executed ? 'done' : ''}">
+        <div class="tx-head">
+          <span class="tx-id">#${i}</span>
+          <span class="tx-badge ${badgeCls}">${badgeTxt}</span>
+        </div>
+        <div class="tx-info">
+          <strong>To:</strong> ${to}<br/>
+          <strong>Value:</strong> ${ethVal} ETH<br/>
+          <strong>Approvals:</strong> ${approvals} / ${required}
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+        ${!executed ? `<div class="tx-acts">
+          ${isOwnerUser && !hasApproved ? `<button class="btn btn-sm btn-green" onclick="doApprove(${i})">✓ Approve</button>` : ''}
+          ${isOwnerUser && hasApproved  ? `<button class="btn btn-sm btn-yellow" onclick="doRevoke(${i})">✕ Revoke</button>` : ''}
+          ${isReady                     ? `<button class="btn btn-sm btn-blue" onclick="doExecute(${i})">▶ Execute</button>` : ''}
+        </div>` : ''}
+      </div>`);
+  }
+  box.innerHTML = cards.join('');
+}
+
+// ── Deposit ETH ────────────────────────────────────
+$('btn-deposit').addEventListener('click', async () => {
+  const amt = $('dep-amt').value.trim();
+  if (!amt) { toast('Enter an amount.', true); return; }
+  try {
+    $('btn-deposit').disabled = true;
+    const tx = await currentWallet.sendTransaction({
+      to: CONFIG.contractAddress,
+      value: ethers.utils.parseEther(amt),
+      ...TX_OPTS,
+    });
+    addLog('Depositing ' + amt + ' ETH…', 'inf');
+    await tx.wait();
+    addLog('Deposited ' + amt + ' ETH ✓', 'ok');
+    toast('Deposited ' + amt + ' ETH');
+    await refresh();
+  } catch(e) { toast(e.message, true); addLog(e.message, 'err'); }
+  finally { $('btn-deposit').disabled = false; }
+});
+
+// ── Submit TX ──────────────────────────────────────
+$('btn-submit').addEventListener('click', async () => {
+  const to   = $('tx-to').value.trim();
+  const val  = $('tx-val').value.trim();
+  const data = $('tx-data').value.trim() || '0x';
+  if (!ethers.utils.isAddress(to)) { toast('Invalid address.', true); return; }
+  if (!val) { toast('Enter a value.', true); return; }
+  try {
+    $('btn-submit').disabled = true;
+    const tx = await contract.submit(to, ethers.utils.parseEther(val), data, TX_OPTS);
+    addLog('Submitting TX → ' + short(to) + ' for ' + val + ' ETH…', 'inf');
+    await tx.wait();
+    addLog('Transaction submitted ✓', 'ok');
+    toast('Transaction submitted!');
+    await refresh();
+  } catch(e) { toast(e.message, true); addLog(e.message, 'err'); }
+  finally { $('btn-submit').disabled = false; }
+});
+
+// ── Approve ────────────────────────────────────────
+window.doApprove = async id => {
+  try {
+    const tx = await contract.approve(id, TX_OPTS);
+    addLog('Approving TX #' + id + '…', 'inf');
+    await tx.wait();
+    addLog('TX #' + id + ' approved ✓', 'ok');
+    toast('Approved TX #' + id);
+    await refresh();
+  } catch(e) { toast(e.message, true); addLog(e.message, 'err'); }
+};
+
+// ── Revoke ─────────────────────────────────────────
+window.doRevoke = async id => {
+  try {
+    const tx = await contract.revoke(id, TX_OPTS);
+    addLog('Revoking TX #' + id + '…', 'inf');
+    await tx.wait();
+    addLog('TX #' + id + ' revoked', 'ok');
+    toast('Revoked TX #' + id);
+    await refresh();
+  } catch(e) { toast(e.message, true); addLog(e.message, 'err'); }
+};
+
+// ── Execute ────────────────────────────────────────
+window.doExecute = async id => {
+  try {
+    const tx = await contract.execute(id, TX_OPTS);
+    addLog('Executing TX #' + id + '…', 'inf');
+    await tx.wait();
+    addLog('TX #' + id + ' executed ✓', 'ok');
+    toast('TX #' + id + ' executed!');
+    await refresh();
+  } catch(e) { toast(e.message, true); addLog(e.message, 'err'); }
+};
+
+// ── Listen to contract events ──────────────────────
+function listenEvents() {
+  const readOnly = new ethers.Contract(CONFIG.contractAddress, ABI, provider);
+  readOnly.on('Deposit', (s, amt) => { addLog('Deposit: ' + ethers.utils.formatEther(amt) + ' ETH from ' + short(s), 'ok'); refresh(); });
+  readOnly.on('Submit',  id  => { addLog('New TX #' + id, 'inf'); refresh(); });
+  readOnly.on('Approve', (o, id) => { addLog('TX #' + id + ' approved by ' + short(o), 'inf'); refresh(); });
+  readOnly.on('Revoke',  (o, id) => { addLog('TX #' + id + ' revoked by ' + short(o), 'ok'); refresh(); });
+  readOnly.on('Execute', id  => { addLog('TX #' + id + ' EXECUTED!', 'ok'); refresh(); });
+}
+
+// ── Start ──────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
